@@ -1,0 +1,391 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#172b4d">
+<title>Jobsheet</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f2f5f9;color:#172b4d;font-family:Arial,sans-serif}
+header{background:#172b4d;color:white;padding:22px;text-align:center}
+header h1{margin:0;font-size:27px}
+main{max-width:720px;margin:auto;padding:16px}
+.card{background:white;border-radius:13px;padding:18px;margin-bottom:15px;box-shadow:0 2px 9px #0000000c}
+label{display:block;font-weight:bold;font-size:14px;margin:14px 0 7px}
+input,textarea,select{width:100%;padding:12px;border:1px solid #ccd4df;border-radius:8px;font:inherit;background:white}
+textarea{min-height:85px;resize:vertical}
+button{padding:12px 15px;border:0;border-radius:8px;font-weight:bold;cursor:pointer;font-size:14px}
+.primary{background:#1769aa;color:white}
+.secondary{background:#eaf0f7;color:#172b4d}
+.danger{background:#fff0f0;color:#a22}
+button:disabled{opacity:.5}
+.tabs{display:flex;gap:8px;margin-bottom:15px}
+.tabs button{flex:1}
+.tabs .active{background:#1769aa;color:white}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:15px}
+.actions button{flex:1}
+.job{border:1px solid #dce2ea;padding:13px;border-radius:10px;margin:10px 0;background:white}
+.job h3{margin:0 0 7px}
+.small{font-size:12px;color:#64748b}
+.status{display:inline-block;padding:5px 9px;background:#e8f2ff;border-radius:20px;font-size:12px}
+.done{background:#dcfce7;color:#166534}
+.photos{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:10px}
+.photos img{width:100%;max-height:180px;object-fit:contain;border-radius:8px;background:#eee}
+.hidden{display:none!important}
+#message{padding:10px 0;color:#1769aa;font-size:14px}
+@media print{
+body{background:white}
+header,.tabs,.no-print,.actions,#message{display:none!important}
+main{padding:0;max-width:none}
+.card{box-shadow:none;border:0}
+#editor{display:block!important}
+input,textarea{border:0;padding:5px 0}
+}
+</style>
+</head>
+<body>
+<header><h1>JOBSHEET</h1></header>
+<main>
+<section id="login" class="card">
+<h2>Jobsheet Login</h2>
+<p class="small">Sign in to access your shared work jobsheets.</p>
+<label>Email address</label>
+<input id="email" type="email" autocomplete="email" placeholder="Your email">
+<label>Password</label>
+<input id="password" type="password" autocomplete="current-password" placeholder="Password">
+<div class="actions">
+<button class="primary" id="signIn">Sign in</button>
+<button class="secondary" id="signUp">Create account</button>
+</div>
+<p class="small">Create your first account here. Additional staff accounts should be added by the administrator.</p>
+</section>
+
+<section id="app" class="hidden">
+<div class="tabs no-print">
+<button class="active" id="newTab">+ New Jobsheet</button>
+<button class="secondary" id="historyTab">History</button>
+<button class="secondary" id="logout">Sign out</button>
+</div>
+
+<section id="editor" class="card">
+<h2 id="formTitle">New Jobsheet</h2>
+<label>Date</label>
+<input id="jobDate" type="date">
+<label>Area</label>
+<input id="area" type="text" placeholder="Enter area">
+<label>Task</label>
+<textarea id="task" placeholder="Describe the work or task..."></textarea>
+
+<label class="no-print">Photographs</label>
+<div class="no-print">
+<input id="camera" type="file" accept="image/*" capture="environment">
+<label>Or upload from photo library</label>
+<input id="library" type="file" accept="image/*" multiple>
+<p class="small">You can add several photographs. Use reasonably sized images to conserve free storage.</p>
+</div>
+<div id="photos" class="photos"></div>
+
+<div class="actions no-print">
+<button class="primary" id="save">Save Jobsheet</button>
+<button class="secondary" id="print">Print / Save PDF</button>
+<button class="secondary" id="clear">New / Clear</button>
+</div>
+</section>
+
+<section id="history" class="card hidden">
+<h2>Jobsheet History</h2>
+<input id="search" type="search" placeholder="Search area or task...">
+<label>Filter</label>
+<select id="filter">
+<option value="all">All jobsheets</option>
+<option value="In Progress">In Progress</option>
+<option value="Completed">Completed</option>
+</select>
+<div id="jobList"></div>
+</section>
+</section>
+<div id="message" role="status" aria-live="polite"></div>
+</main>
+
+<script>
+const SUPABASE_URL = "https://ervuinacsjeiwscbsrgm.supabase.co";
+const SUPABASE_KEY = "sb_publishable_jx9hPGnt9w5gXevue3FQiA_eg5v3Spd";
+
+const db = window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+
+let currentUser=null;
+let editingId=null;
+let existingPhotos=[];
+let newPhotos=[];
+
+const $=id=>document.getElementById(id);
+const message=t=>$("message").textContent=t;
+const today=()=>new Date().toISOString().slice(0,10);
+
+function showApp(){
+$("login").classList.add("hidden");
+$("app").classList.remove("hidden");
+$("jobDate").value=today();
+loadHistory();
+}
+
+async function checkSession(){
+const {data,error}=await db.auth.getSession();
+if(error){message(error.message);return}
+if(data.session){
+currentUser=data.session.user;
+showApp();
+}
+}
+checkSession();
+
+$("signIn").onclick=async()=>{
+const {data,error}=await db.auth.signInWithPassword({
+email:$("email").value.trim(),
+password:$("password").value
+});
+if(error){message(error.message);return}
+currentUser=data.user;
+showApp();
+message("Welcome back.");
+};
+
+$("signUp").onclick=async()=>{
+const {data,error}=await db.auth.signUp({
+email:$("email").value.trim(),
+password:$("password").value
+});
+if(error){message(error.message);return}
+message(data.session?"Account created. You are signed in.":"Account created. Check your email to confirm before signing in.");
+if(data.session){currentUser=data.user;showApp()}
+};
+
+$("logout").onclick=async()=>{
+await db.auth.signOut();
+currentUser=null;
+$("app").classList.add("hidden");
+$("login").classList.remove("hidden");
+message("Signed out.");
+};
+
+db.auth.onAuthStateChange((event,session)=>{
+if(session){currentUser=session.user}
+});
+
+function switchView(which){
+$("editor").classList.toggle("hidden",which!=="new");
+$("history").classList.toggle("hidden",which!=="history");
+$("newTab").classList.toggle("active",which==="new");
+$("historyTab").classList.toggle("active",which==="history");
+if(which==="history")loadHistory();
+}
+
+$("newTab").onclick=()=>switchView("new");
+$("historyTab").onclick=()=>switchView("history");
+
+function resetForm(){
+editingId=null;
+existingPhotos=[];
+newPhotos=[];
+$("area").value="";
+$("task").value="";
+$("jobDate").value=today();
+$("camera").value="";
+$("library").value="";
+$("photos").innerHTML="";
+$("formTitle").textContent="New Jobsheet";
+$("save").textContent="Save Jobsheet";
+}
+
+$("clear").onclick=resetForm;
+
+async function addFiles(files){
+for(const file of Array.from(files)){
+if(!file.type.startsWith("image/"))continue;
+if(file.size>8*1024*1024){
+message("Photo too large. Please use an image under 8MB.");
+continue;
+}
+newPhotos.push(file);
+}
+renderPhotos();
+}
+
+$("camera").onchange=e=>addFiles(e.target.files);
+$("library").onchange=e=>addFiles(e.target.files);
+
+async function renderPhotos(){
+const container=$("photos");
+container.innerHTML="";
+for(const p of existingPhotos){
+const url=p.url;
+if(!url)continue;
+const img=document.createElement("img");
+img.src=url;
+img.alt="Saved job photograph";
+container.appendChild(img);
+}
+for(const p of newPhotos){
+const img=document.createElement("img");
+img.src=URL.createObjectURL(p);
+img.alt="New job photograph";
+container.appendChild(img);
+}
+}
+
+async function uploadPhotos(jobId){
+for(const file of newPhotos){
+const ext=(file.name.split(".").pop()||"jpg").replace(/[^a-z0-9]/gi,"");
+const path=jobId+"/"+crypto.randomUUID()+"."+ext;
+const {error:uploadError}=await db.storage
+.from("jobsheet-photos").upload(path,file,{contentType:file.type});
+if(uploadError)throw uploadError;
+
+const {error:recordError}=await db.from("job_photos").insert({
+jobsheet_id:jobId,
+storage_path:path
+});
+if(recordError)throw recordError;
+}
+}
+
+async function saveJob(){
+if(!currentUser){message("Please sign in.");return}
+const area=$("area").value.trim();
+const task=$("task").value.trim();
+if(!area||!task){message("Please enter both Area and Task.");return}
+
+$("save").disabled=true;
+message("Saving jobsheet...");
+
+try{
+let jobId=editingId;
+const record={
+job_date:$("jobDate").value||today(),
+area,
+task,
+updated_at:new Date().toISOString()
+};
+
+if(jobId){
+const {error}=await db.from("jobsheets").update(record).eq("id",jobId);
+if(error)throw error;
+}else{
+record.created_by=currentUser.id;
+const {data,error}=await db.from("jobsheets")
+.insert(record).select().single();
+if(error)throw error;
+jobId=data.id;
+}
+
+await uploadPhotos(jobId);
+newPhotos=[];
+message("Jobsheet saved successfully.");
+resetForm();
+await loadHistory();
+}catch(error){
+message("Save error: "+error.message);
+}
+$("save").disabled=false;
+}
+
+$("save").onclick=saveJob;
+
+$("print").onclick=()=>{
+window.print();
+};
+
+async function loadHistory(){
+const list=$("jobList");
+list.innerHTML="Loading...";
+const {data:jobs,error}=await db.from("jobsheets")
+.select("*").order("created_at",{ascending:false});
+if(error){list.textContent=error.message;return}
+list.innerHTML="";
+
+const search=$("search").value.toLowerCase();
+const filter=$("filter").value;
+
+const filtered=(jobs||[]).filter(j=>{
+const matches=(j.area+" "+j.task).toLowerCase().includes(search);
+return matches&&(filter==="all"||j.status===filter);
+});
+
+if(!filtered.length){
+list.textContent="No jobsheets found.";
+return;
+}
+
+for(const job of filtered){
+const div=document.createElement("div");
+div.className="job";
+const title=document.createElement("h3");
+title.textContent=job.area;
+const task=document.createElement("p");
+task.textContent=job.task;
+const date=document.createElement("p");
+date.className="small";
+date.textContent="Date: "+job.job_date;
+const status=document.createElement("span");
+status.className="status "+(job.status==="Completed"?"done":"");
+status.textContent=job.status;
+const actions=document.createElement("div");
+actions.className="actions no-print";
+
+const open=document.createElement("button");
+open.className="secondary";
+open.textContent="Open / Edit";
+open.onclick=()=>openJob(job);
+
+const complete=document.createElement("button");
+complete.className="primary";
+complete.textContent=job.status==="Completed"?"Reopen":"Mark Completed";
+complete.onclick=()=>changeStatus(job);
+
+actions.append(open,complete);
+div.append(title,task,date,status,actions);
+list.append(div);
+}
+}
+
+async function changeStatus(job){
+const next=job.status==="Completed"?"In Progress":"Completed";
+const {error}=await db.from("jobsheets")
+.update({status:next,updated_at:new Date().toISOString()})
+.eq("id",job.id);
+if(error){message(error.message);return}
+message("Status updated.");
+loadHistory();
+}
+
+async function openJob(job){
+editingId=job.id;
+$("area").value=job.area;
+$("task").value=job.task;
+$("jobDate").value=job.job_date;
+$("formTitle").textContent="Edit Jobsheet";
+$("save").textContent="Update Jobsheet";
+newPhotos=[];
+
+const {data,error}=await db.from("job_photos")
+.select("*").eq("jobsheet_id",job.id);
+if(error){message(error.message);return}
+
+existingPhotos=[];
+for(const p of data||[]){
+const {data:signed,error:signedError}=await db.storage
+.from("jobsheet-photos").createSignedUrl(p.storage_path,3600);
+if(!signedError)existingPhotos.push({url:signed.signedUrl});
+}
+await renderPhotos();
+switchView("new");
+}
+
+$("search").oninput=loadHistory;
+$("filter").onchange=loadHistory;
+</script>
+</body>
+</html>
