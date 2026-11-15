@@ -79,12 +79,11 @@ input,textarea{border:0;padding:5px 0}
 <label>Task</label>
 <textarea id="task" placeholder="Describe the work or task..."></textarea>
 
-<label class="no-print">Photographs</label>
+<label class="no-print">Photos</label>
 <div class="no-print">
-<input id="camera" type="file" accept="image/*" capture="environment">
-<label>Or upload from photo library</label>
-<input id="library" type="file" accept="image/*" multiple>
-<p class="small">You can add several photographs. Use reasonably sized images to conserve free storage.</p>
+  <button type="button" class="primary" id="addPhoto">+ Add Photo</button>
+  <input id="photoPicker" type="file" accept="image/*" multiple hidden>
+  <p class="small">Take a photo or choose from your photo library.</p>
 </div>
 <div id="photos" class="photos"></div>
 
