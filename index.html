@@ -213,7 +213,7 @@ newPhotos.push(file);
 renderPhotos();
 }
 
-$("camera").onchange=e=>addFiles(e.target.files);
+$("addPhoto").onclick=()=>$("photoPicker").click();  $("photoPicker").onchange=e=>{   addFiles(e.target.files);   e.target.value=""; };=e=>addFiles(e.target.files);
 $("library").onchange=e=>addFiles(e.target.files);
 
 async function renderPhotos(){
